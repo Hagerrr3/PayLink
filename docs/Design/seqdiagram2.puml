@@ -1,0 +1,97 @@
+@startuml PayLink_Refund_Failed_Payment
+title PayLink - Refund a Failed Payment (Sequence Diagram)
+
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam participantPadding 15
+skinparam NoteBackgroundColor #FFF8DC
+
+participant "Payment Service" as PS
+participant "Refund Service" as RS
+database "Payment Repository" as PR
+database "Refund Repository" as RR
+participant "Wallet" as W
+participant "Notification Service" as N
+actor Customer
+
+note over PS, RR
+  **Assumptions** (class diagram not supplied):
+  - Operation names are illustrative and must be aligned with the PayLink Class Diagram.
+  - Refund Repository enforces one refund per payment (unique paymentId)
+    to back up the duplicate check.
+  - No retry policy is assumed, so a failed wallet credit ends as FAILED.
+end note
+
+note over RS, W
+  **Refund vs. Release Reserved Funds**
+  Refund returns money already deducted (captured) from the wallet.
+  Release Reserved Funds frees money that was only held.
+  This diagram covers Refund only and never calls a release operation.
+end note
+
+== Failure Detection ==
+PS -> RS ++ : requestRefund(paymentId)
+
+== Payment Retrieval ==
+RS -> PR ++ : getPaymentById(paymentId)
+PR --> RS -- : payment or null
+
+alt Original payment not found
+    RS --> PS : refundError(PAYMENT_NOT_FOUND)
+    note right of RS : No refund recorded.\nCustomer not notified\n(payment cannot be identified).
+else Payment found
+
+    == Eligibility and Duplicate Check ==
+    RS -> RS : validateRefundEligibility(payment)\n[status = FAILED and amount deducted]
+
+    alt Payment not eligible for refund
+        RS -> RR ++ : createRefund(paymentId, REJECTED)
+        RR --> RS -- : refundId
+        RS --> PS : refundRejected(NOT_ELIGIBLE)
+        note right of RS : Wallet is not called.
+    else Payment eligible
+        RS -> RR ++ : findRefundByPaymentId(paymentId)
+        RR --> RS -- : existingRefund or null
+
+        alt Payment already refunded
+            RS --> PS : existingRefundResult(refundId, status)
+            note right of RS : Idempotent response.\nWallet is not called again.
+        else Not yet refunded
+            RS -> RR ++ : createRefund(paymentId, amount, PROCESSING)
+            RR --> RS -- : refundId
+            note right of RR : Duplicate-refund guard\nrecorded before the wallet credit.
+
+            == Wallet Credit ==
+            RS -> W ++ : creditWallet(customerId, amount, refundId)
+
+            alt Wallet credit fails
+                W --> RS -- : creditFailed(reason)
+
+                == Status Update and Notification ==
+                RS -> RR ++ : updateRefundStatus(refundId, FAILED)
+                RR --> RS -- : statusUpdated
+                RS ->> N ++ : sendRefundNotification(customerId, FAILED)
+                N -->> Customer : Refund could not be completed yet
+                deactivate N
+                RS --> PS : refundFailed(refundId, reason)
+            else Refund completes successfully
+                W --> RS -- : creditConfirmed(refundId)
+
+                == Status Update and Notification ==
+                RS -> RR ++ : updateRefundStatus(refundId, COMPLETED)
+                RR --> RS -- : statusUpdated
+                note right of RR : COMPLETED is set only after\nthe wallet confirms the credit.
+                RS ->> N ++ : sendRefundNotification(customerId, COMPLETED)
+                N -->> Customer : Refund completed, amount returned to wallet
+                deactivate N
+                RS --> PS : refundCompleted(refundId)
+            end
+        end
+    end
+end
+
+deactivate RS
+
+@enduml

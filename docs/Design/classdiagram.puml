@@ -1,0 +1,382 @@
+@startuml
+left to right direction
+skinparam dpi 90
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam linetype polyline
+' ===== USER AND WALLET =====
+package "User Management" {
+    enum VerificationLevel {
+        BASIC
+        VERIFIED
+    }
+
+    class User {
+        -id: Long
+        -name: String
+        -email: String
+        -phone: String
+        -verificationLevel: VerificationLevel
+        +updateProfile(): void
+    }
+
+    class CustomerRole
+    class AgentRole {
+        -agentCode: String
+    }
+
+    User "1" *-- "0..1" CustomerRole
+    User "1" *-- "0..1" AgentRole
+}
+
+package "Wallet Management" {
+    class Wallet {
+        -id: Long
+        -availableBalance: BigDecimal
+        -heldBalance: BigDecimal
+        -currency: String
+        +deposit(amount: BigDecimal): void
+        +withdraw(amount: BigDecimal): void
+        +placeHold(amount: BigDecimal): Hold
+        +captureHold(hold: Hold): void
+        +releaseHold(hold: Hold): void
+    }
+
+    class Hold {
+        -id: Long
+        -amount: BigDecimal
+        -createdAt: LocalDateTime
+        -status: String
+        +capture(): void
+        +release(): void
+    }
+
+    class LedgerEntry {
+        -id: Long
+        -amount: BigDecimal
+        -type: String
+        -reference: String
+        -createdAt: LocalDateTime
+    }
+
+    User "1" *-- "1" Wallet
+    Wallet "1" *-- "0..*" LedgerEntry
+    Wallet "1" *-- "0..*" Hold
+}
+
+' ===== PAYMENT AND STATE PATTERN =====
+package "Payment Processing" {
+    abstract class Payment {
+        -id: Long
+        -amount: BigDecimal
+        -fee: BigDecimal
+        -createdAt: LocalDateTime
+        +process(): void
+        +changeState(state: PaymentState): void
+    }
+
+    class BillPayment {
+        -billReference: String
+    }
+
+    class WalletTransfer {
+        -receiverWalletId: Long
+    }
+
+    class CashTransaction {
+        -agentId: Long
+    }
+
+    Payment <|-- BillPayment
+    Payment <|-- WalletTransfer
+    Payment <|-- CashTransaction
+
+    interface PaymentState {
+        +handle(payment: Payment): void
+    }
+
+    class InitiatedState
+    class FundsHeldState
+    class SubmittedState
+    class CompletedState
+    class FailedState
+    class UnknownState
+    class RefundedState
+
+    PaymentState <|.. InitiatedState
+    PaymentState <|.. FundsHeldState
+    PaymentState <|.. SubmittedState
+    PaymentState <|.. CompletedState
+    PaymentState <|.. FailedState
+    PaymentState <|.. UnknownState
+    PaymentState <|.. RefundedState
+
+    Payment "1" --> "1" PaymentState : currentState
+    Payment "1" --> "0..1" Hold
+    Payment "0..*" --> "1" User : initiatedBy
+    Payment "0..*" --> "1" Wallet
+}
+
+' ===== BILLER INTEGRATION =====
+package "Biller Integration" {
+    class Biller {
+        -id: Long
+        -name: String
+        -category: String
+        -active: boolean
+    }
+
+    interface BillInquiryProvider {
+        +inquire(reference: String): BigDecimal
+    }
+
+    interface PaymentSubmissionProvider {
+        +submit(payment: Payment): String
+    }
+
+    interface AsyncCallbackProvider {
+        +handleCallback(data: String): void
+    }
+
+    interface BatchPaymentProvider {
+        +submitBatch(file: String): void
+    }
+
+    abstract class BillerAdapter
+
+    class ElectroCoAdapter
+    class AquaCoAdapter
+    class TopUpNetAdapter
+    class NetCoAdapter
+
+    BillerAdapter <|-- ElectroCoAdapter
+    BillerAdapter <|-- AquaCoAdapter
+    BillerAdapter <|-- TopUpNetAdapter
+    BillerAdapter <|-- NetCoAdapter
+
+    BillInquiryProvider <|.. ElectroCoAdapter
+    PaymentSubmissionProvider <|.. ElectroCoAdapter
+
+    BillInquiryProvider <|.. AquaCoAdapter
+    PaymentSubmissionProvider <|.. AquaCoAdapter
+
+    PaymentSubmissionProvider <|.. TopUpNetAdapter
+    AsyncCallbackProvider <|.. TopUpNetAdapter
+
+    BatchPaymentProvider <|.. NetCoAdapter
+
+    Biller "1" -- "0..*" BillerAdapter
+    BillPayment --> Biller
+}
+
+' ===== FEES AND COMMISSION =====
+package "Fees and Commission" {
+    interface FeeRule {
+        +calculate(amount: BigDecimal): BigDecimal
+    }
+
+    class FixedFeeRule {
+        -fee: BigDecimal
+    }
+
+    class PercentageFeeRule {
+        -percentage: BigDecimal
+        -minimumFee: BigDecimal
+    }
+
+    class TieredFeeRule {
+        -threshold: BigDecimal
+        -lowerFee: BigDecimal
+        -upperFee: BigDecimal
+    }
+
+    class FeeCalculator {
+        +calculateFee(biller: Biller, amount: BigDecimal): BigDecimal
+    }
+
+    class Promotion {
+        -startDate: LocalDateTime
+        -endDate: LocalDateTime
+        -isActive: boolean
+    }
+
+    class Commission {
+        -amount: BigDecimal
+        -createdAt: LocalDateTime
+        +calculate(serviceFee: BigDecimal): BigDecimal
+        +credit(): void
+    }
+
+    FeeRule <|.. FixedFeeRule
+    FeeRule <|.. PercentageFeeRule
+    FeeRule <|.. TieredFeeRule
+
+    FeeCalculator --> FeeRule
+    FeeCalculator --> Promotion
+    AgentRole "1" -- "0..*" Commission
+    Commission --> Payment
+    Commission --> LedgerEntry
+}
+
+' ===== SECURITY AND IDEMPOTENCY =====
+package "Security" {
+    interface FraudChecker {
+        +check(user: User, amount: BigDecimal): boolean
+    }
+
+    class DailyLimitChecker
+    class VelocityChecker
+    class AccountBlockChecker
+
+    class FraudCheckService {
+        +validate(user: User, amount: BigDecimal): boolean
+    }
+
+    FraudChecker <|.. DailyLimitChecker
+    FraudChecker <|.. VelocityChecker
+    FraudChecker <|.. AccountBlockChecker
+
+    FraudCheckService --> FraudChecker
+
+    class IdempotencyRecord {
+        -key: String
+        -requestHash: String
+        -createdAt: LocalDateTime
+    }
+
+    class IdempotencyService {
+        +checkDuplicate(key: String): boolean
+        +save(key: String): void
+    }
+
+    IdempotencyService "1" *-- "0..*" IdempotencyRecord
+}
+
+' ===== NOTIFICATIONS =====
+package "Notifications" {
+    interface NotificationProvider {
+        +send(message: String, recipient: String): boolean
+    }
+
+    class SMSProvider
+    class PushProvider
+    class EmailProvider
+
+    class Notification {
+        -message: String
+        -sentAt: LocalDateTime
+        -retryCount: int
+    }
+
+    class NotificationService {
+        +send(notification: Notification): void
+        +retry(notification: Notification): void
+    }
+
+    NotificationProvider <|.. SMSProvider
+    NotificationProvider <|.. PushProvider
+    NotificationProvider <|.. EmailProvider
+
+    NotificationService --> NotificationProvider
+    NotificationService "1" *-- "0..*" Notification
+    User "1" --> "0..*" Notification
+}
+
+' ===== SETTLEMENT AND RECONCILIATION =====
+package "Reconciliation" {
+    class SettlementFile {
+        -fileName: String
+        -receivedAt: LocalDateTime
+        +parse(): List<SettlementRecord>
+    }
+
+    class SettlementRecord {
+        -externalReference: String
+        -amount: BigDecimal
+        -settlementDate: LocalDate
+    }
+
+    class ReconciliationReport {
+        -matchedCount: int
+        -discrepancyCount: int
+    }
+
+    class ReconciliationDiscrepancy {
+        -description: String
+        -expectedAmount: BigDecimal
+        -actualAmount: BigDecimal
+    }
+
+    class ReconciliationService {
+        +processFile(file: SettlementFile): ReconciliationReport
+        +compareRecords(): void
+    }
+
+    SettlementFile "1" *-- "1..*" SettlementRecord
+    ReconciliationReport "1" *-- "0..*" ReconciliationDiscrepancy
+    SettlementRecord "0..*" --> "0..1" Payment
+    ReconciliationService --> SettlementFile
+    ReconciliationService --> ReconciliationReport
+}
+
+' ===== APPLICATION SERVICES =====
+package "Application Services" {
+    class PaymentService {
+        +createPayment(): Payment
+        +processPayment(payment: Payment): void
+        +handleCallback(data: String): void
+    }
+
+    class WalletService {
+        +placeHold(wallet: Wallet, amount: BigDecimal): Hold
+        +captureHold(hold: Hold): void
+        +releaseHold(hold: Hold): void
+    }
+
+    class BillInquiryService {
+        +inquire(biller: Biller, reference: String): BigDecimal
+    }
+
+    PaymentService --> WalletService
+    PaymentService --> FeeCalculator
+    PaymentService --> FraudCheckService
+    PaymentService --> IdempotencyService
+    PaymentService --> NotificationService
+    PaymentService --> Commission
+    BillInquiryService --> BillInquiryProvider
+    WalletService --> Wallet
+    PaymentService --> Payment
+}
+
+note right of FraudCheckService
+  Basic daily limit: 5,000 EGP
+  Verified daily limit: 30,000 EGP
+  Minimum payment: 5 EGP
+  Maximum payment: 10,000 EGP
+  More than 5 payments in 60 seconds:
+  block account for 10 minutes.
+end note
+
+note right of FeeCalculator
+  Electricity and Water: 2.50 EGP
+  Mobile: 1.5%, minimum 1 EGP
+  Internet: 2 EGP up to 200 EGP,
+  then 4 EGP.
+  Promotion can make fee zero.
+end note
+
+note right of Commission
+  Agent commission = 40% of service fee.
+  Credit only after successful payment.
+end note
+
+note right of NotificationService
+  Retry failed notifications up to 3 times.
+  Notification failure does not reverse payment.
+end note
+
+note right of UnknownState
+  Keep wallet funds held until
+  the biller confirms the result.
+end note
+@enduml
