@@ -1,0 +1,272 @@
+
+@startuml
+hide circle
+skinparam linetype ortho
+
+entity Customer {
+  * customer_id : INT <<PK>>
+  --
+  full_name : VARCHAR
+  phone_number : VARCHAR
+  email : VARCHAR
+  password_hash : VARCHAR
+  verification_level : VARCHAR
+  status : VARCHAR
+  created_at : DATETIME
+}
+
+entity Agent {
+  * agent_id : INT <<PK>>
+  --
+  full_name : VARCHAR
+  phone_number : VARCHAR
+  shop_name : VARCHAR
+  shop_address : VARCHAR
+  status : VARCHAR
+  created_at : DATETIME
+}
+
+entity Wallet {
+  * wallet_id : INT <<PK>>
+  --
+  customer_id : INT <<FK, NULL>>
+  agent_id : INT <<FK, NULL>>
+  available_balance : DECIMAL
+  held_balance : DECIMAL
+  status : VARCHAR
+  created_at : DATETIME
+}
+
+entity LedgerEntry {
+  * ledger_entry_id : INT <<PK>>
+  --
+  wallet_id : INT <<FK>>
+  entry_type : VARCHAR
+  balance_type : VARCHAR
+  amount : DECIMAL
+  reference_id : INT
+  description : VARCHAR
+  created_at : DATETIME
+}
+
+entity TopUp {
+  * topup_id : INT <<PK>>
+  --
+  wallet_id : INT <<FK>>
+  amount : DECIMAL
+  payment_method : VARCHAR
+  transaction_reference : VARCHAR
+  status : VARCHAR
+  created_at : DATETIME
+}
+
+entity Biller {
+  * biller_id : INT <<PK>>
+  --
+  biller_name : VARCHAR
+  category : VARCHAR
+  integration_type : VARCHAR
+  status : VARCHAR
+}
+
+entity Service {
+  * service_id : INT <<PK>>
+  --
+  biller_id : INT <<FK>>
+  service_name : VARCHAR
+  description : VARCHAR
+  min_amount : DECIMAL
+  max_amount : DECIMAL
+  status : VARCHAR
+}
+
+entity ServiceInputField {
+  * field_id : INT <<PK>>
+  --
+  service_id : INT <<FK>>
+  field_name : VARCHAR
+  field_label : VARCHAR
+  data_type : VARCHAR
+  is_required : BOOLEAN
+}
+
+entity FeeRule {
+  * fee_rule_id : INT <<PK>>
+  --
+  service_id : INT <<FK>>
+  fixed_amount : DECIMAL
+  percentage : DECIMAL
+  status : VARCHAR
+}
+
+entity Promotion {
+  * promotion_id : INT <<PK>>
+  --
+  biller_id : INT <<FK>>
+  promotion_name : VARCHAR
+  discount_type : VARCHAR
+  discount_value : DECIMAL
+  effective_from : DATETIME
+  effective_to : DATETIME
+  status : VARCHAR
+}
+
+entity Payment {
+  * payment_id : INT <<PK>>
+  --
+  customer_id : INT <<FK>>
+  agent_id : INT <<FK, NULL>>
+  service_id : INT <<FK>>
+  fee_rule_id : INT <<FK, NULL>>
+  amount : DECIMAL
+  service_fee : DECIMAL
+  total_amount : DECIMAL
+  status : VARCHAR
+  idempotency_key : VARCHAR
+  biller_reference : VARCHAR
+  created_at : DATETIME
+  completed_at : DATETIME
+}
+
+entity PaymentHold {
+  * hold_id : INT <<PK>>
+  --
+  payment_id : INT <<FK, UNIQUE>>
+  wallet_id : INT <<FK>>
+  amount : DECIMAL
+  status : VARCHAR
+  created_at : DATETIME
+  released_at : DATETIME
+}
+
+entity Refund {
+  * refund_id : INT <<PK>>
+  --
+  payment_id : INT <<FK, UNIQUE>>
+  amount : DECIMAL
+  reason : VARCHAR
+  status : VARCHAR
+  requested_at : DATETIME
+  approved_at : DATETIME
+}
+
+entity Commission {
+  * commission_id : INT <<PK>>
+  --
+  agent_id : INT <<FK>>
+  payment_id : INT <<FK, UNIQUE>>
+  commission_amount : DECIMAL
+  commission_rate : DECIMAL
+  status : VARCHAR
+  created_at : DATETIME
+}
+
+entity Notification {
+  * notification_id : INT <<PK>>
+  --
+  customer_id : INT <<FK>>
+  payment_id : INT <<FK>>
+  notification_type : VARCHAR
+  message : TEXT
+  status : VARCHAR
+  retry_count : INT
+  created_at : DATETIME
+  sent_at : DATETIME
+}
+
+entity StaffUser {
+  * staff_id : INT <<PK>>
+  --
+  full_name : VARCHAR
+  email : VARCHAR
+  password_hash : VARCHAR
+  role : VARCHAR
+  status : VARCHAR
+}
+
+entity AuditLog {
+  * audit_id : INT <<PK>>
+  --
+  staff_id : INT <<FK>>
+  action : VARCHAR
+  entity_type : VARCHAR
+  entity_id : INT
+  details : TEXT
+  created_at : DATETIME
+}
+
+entity SettlementFile {
+  * settlement_file_id : INT <<PK>>
+  --
+  biller_id : INT <<FK>>
+  file_name : VARCHAR
+  file_date : DATE
+  status : VARCHAR
+  uploaded_at : DATETIME
+}
+
+entity SettlementRecord {
+  * settlement_record_id : INT <<PK>>
+  --
+  settlement_file_id : INT <<FK>>
+  payment_id : INT <<FK, NULL>>
+  biller_reference : VARCHAR
+  amount : DECIMAL
+  status : VARCHAR
+}
+
+entity ReconciliationReport {
+  * report_id : INT <<PK>>
+  --
+  settlement_file_id : INT <<FK, UNIQUE>>
+  total_records : INT
+  matched_records : INT
+  unmatched_records : INT
+  discrepancy_amount : DECIMAL
+  status : VARCHAR
+  generated_at : DATETIME
+}
+
+' Customer and agent wallets
+Customer ||--o| Wallet : owns
+Agent ||--o| Wallet : owns
+
+' Wallet transactions
+Wallet ||--o{ LedgerEntry : records
+Wallet ||--o{ TopUp : receives
+
+' Biller catalog
+Biller ||--o{ Service : provides
+Service ||--o{ ServiceInputField : requires
+Service ||--o{ FeeRule : has
+Biller ||--o{ Promotion : offers
+
+' Payments
+Customer ||--o{ Payment : makes
+Agent |o--o{ Payment : processes
+Service ||--o{ Payment : used_for
+FeeRule |o--o{ Payment : applied_to
+
+' Payment holds and refunds
+Payment ||--o| PaymentHold : has
+Wallet ||--o{ PaymentHold : reserves
+Payment ||--o| Refund : generates
+
+' Agent commissions
+Agent ||--o{ Commission : earns
+Payment ||--o| Commission : generates
+
+' Notifications
+Payment ||--o{ Notification : triggers
+Customer ||--o{ Notification : receives
+
+' Staff and audit logs
+StaffUser ||--o{ AuditLog : performs
+
+' Settlement and reconciliation
+Biller ||--o{ SettlementFile : sends
+SettlementFile ||--o{ SettlementRecord : contains
+Payment |o--o{ SettlementRecord : matched_with
+SettlementFile ||--o| ReconciliationReport : produces
+
+@enduml

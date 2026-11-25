@@ -1,0 +1,154 @@
+@startuml PayLink_Pay_Bill_Using_Wallet
+title PayLink - Pay Bill Using Wallet (Sequence Diagram)
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam participantPadding 15
+skinparam NoteBackgroundColor #FFF8DC
+actor Customer
+participant "PayLink UI" as UI
+participant "Payment Controller" as Controller
+participant "Payment Service" as Service
+participant "Fee Calculator" as Fee
+participant "Fraud Check Service" as Fraud
+participant "Wallet" as Wallet
+participant "Biller Adapter" as Adapter
+participant "Biller System" as Biller
+participant "Notification Service" as Notify
+note over Service, Fraud
+  **Assumptions** (class diagram not supplied):
+  - Payment Service coordinates the whole workflow.
+  - Fraud Check Service exists as a separate service.
+  - Biller Adapter is the only integration boundary to external billers.
+  - Operation names are illustrative and must be aligned with the class diagram.
+end note
+== Bill Inquiry ==
+Customer -> UI : Select biller and enter bill reference
+activate UI
+UI -> Controller : inquireBill(billerId, billReference)
+activate Controller
+Controller -> Service : getBillDetails(billerId, billReference)
+activate Service
+Service -> Adapter : fetchBillDetails(billerId, billReference)
+activate Adapter
+Adapter -> Biller : billInquiryRequest(billReference)
+activate Biller
+Biller --> Adapter : billInquiryResponse
+deactivate Biller
+alt Bill inquiry failure
+    Adapter --> Service : BillInquiryFailed(reason)
+    deactivate Adapter
+    Service --> Controller : inquiryError(reason)
+    Controller --> UI : inquiryError(reason)
+    UI --> Customer : Show error (invalid reference or biller unavailable)
+    deactivate Service
+    deactivate Controller
+    deactivate UI
+else Bill inquiry successful
+    Adapter --> Service : BillDetails(amount, dueDate)
+    deactivate Adapter
+
+    == Fee Calculation ==
+    Service -> Fee : calculateFee(billerId, billAmount)
+    activate Fee
+    Fee --> Service : serviceFee
+    deactivate Fee
+    Service --> Controller : billSummary(billAmount, serviceFee, totalAmount)
+    deactivate Service
+    Controller --> UI : billSummary
+    deactivate Controller
+    UI --> Customer : Display bill summary (amount, fee, total)
+
+    == Payment Request and Validation ==
+    Customer -> UI : Confirm payment
+    UI -> Controller : payBill(customerId, billerId, billReference, totalAmount)
+    activate Controller
+    Controller -> Service : processPayment(paymentRequest)
+    activate Service
+    Service -> Service : validatePayment(paymentRequest)
+    Service -> Fraud : validateTransaction(paymentRequest)
+    activate Fraud
+    Fraud --> Service : fraudCheckResult
+    deactivate Fraud
+
+    alt Fraud validation rejected
+        Service -> Service : updatePaymentStatus(REJECTED)
+        Service --> Controller : paymentResult(REJECTED)
+        Controller --> UI : paymentResult(REJECTED)
+        UI --> Customer : Show payment rejected
+        Service ->> Notify : sendNotification(customerId, REJECTED)
+        activate Notify
+        Notify -->> Customer : Payment rejected notification
+        deactivate Notify
+    else Fraud validation approved
+
+        == Wallet Balance Check ==
+        Service -> Wallet : checkAvailableBalance(customerId, totalAmount)
+        activate Wallet
+        Wallet --> Service : balanceCheckResult
+        deactivate Wallet
+
+        alt Insufficient wallet balance
+            Service -> Service : updatePaymentStatus(FAILED)
+            Service --> Controller : paymentResult(FAILED, INSUFFICIENT_BALANCE)
+            Controller --> UI : paymentResult(FAILED, INSUFFICIENT_BALANCE)
+            UI --> Customer : Show insufficient balance message
+            Service ->> Notify : sendNotification(customerId, FAILED)
+            activate Notify
+            Notify -->> Customer : Insufficient balance notification
+            deactivate Notify
+        else Sufficient wallet balance
+
+            == Fund Reservation ==
+            Service -> Wallet : reserveFunds(customerId, totalAmount)
+            activate Wallet
+            Wallet --> Service : reservationId
+            deactivate Wallet
+            Service -> Service : updatePaymentStatus(PROCESSING)
+
+            == Biller Payment ==
+            Service -> Adapter : submitPayment(billerId, billReference, billAmount)
+            activate Adapter
+            Adapter -> Biller : paymentRequest(billReference, billAmount)
+            activate Biller
+            Biller --> Adapter : paymentResponse
+            deactivate Biller
+            Adapter --> Service : billerPaymentResult
+            deactivate Adapter
+
+            alt Successful bill payment (biller accepted)
+                Service -> Wallet : captureFunds(reservationId)
+                activate Wallet
+                Wallet --> Service : captureConfirmed
+                deactivate Wallet
+                Service -> Service : updatePaymentStatus(COMPLETED)
+                Service --> Controller : paymentResult(COMPLETED, receiptNo)
+                Controller --> UI : paymentResult(COMPLETED, receiptNo)
+                UI --> Customer : Show payment success and receipt
+                Service ->> Notify : sendNotification(customerId, COMPLETED)
+                activate Notify
+                Notify -->> Customer : Payment successful notification
+                deactivate Notify
+            else Failed bill payment (biller rejected)
+                Service -> Wallet : releaseFunds(reservationId)
+                activate Wallet
+                Wallet --> Service : releaseConfirmed
+                deactivate Wallet
+                Service -> Service : updatePaymentStatus(FAILED)
+                Service --> Controller : paymentResult(FAILED, billerReason)
+                Controller --> UI : paymentResult(FAILED, billerReason)
+                UI --> Customer : Show payment failed (funds released)
+                Service ->> Notify : sendNotification(customerId, FAILED)
+                activate Notify
+                Notify -->> Customer : Payment failed notification
+                deactivate Notify
+            end
+        end
+    end
+    deactivate Service
+    deactivate Controller
+    deactivate UI
+end
+
+@enduml

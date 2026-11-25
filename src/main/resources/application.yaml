@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: paylink
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/paylink}
+    username: ${DB_USER:paylink}
+    password: ${DB_PASSWORD:paylink}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
