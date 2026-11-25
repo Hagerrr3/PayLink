@@ -1,0 +1,55 @@
+    [*] --> Initiated
+
+    state "Initiated" as Initiated
+    state "Funds Held" as FundsHeld
+    state "Submitted to Biller" as Submitted
+    state "Completed" as Completed
+    state "Failed" as Failed
+    state "Rejected" as Rejected
+    state "Unknown" as Unknown
+    state "Refunded" as Refunded
+
+    Initiated --> FundsHeld: Validation successful / Reserve funds
+
+    Initiated --> Rejected: Validation failed or insufficient balance
+
+    FundsHeld --> Submitted: Send payment request to biller
+
+    Submitted --> Completed: Biller confirms success
+
+    Submitted --> Failed: Biller confirms failure
+
+    Submitted --> Unknown: Timeout or missing response
+
+    Unknown --> Completed: Late success confirmation
+
+    Unknown --> Failed: Late failure confirmation
+
+    Failed --> Refunded: Release held funds
+
+    Unknown --> Refunded: Confirmed failure / Release held funds
+
+    Completed --> [*]
+    Rejected --> [*]
+    Refunded --> [*]
+
+    note right of Unknown
+        Funds remain held.
+        No automatic refund on timeout.
+        Wait for biller confirmation.
+    end note
+
+    note right of Rejected
+        No funds were reserved.
+        No refund is required.
+    end note
+
+    note right of Completed
+        Payment is successful.
+        No normal refund transition.
+    end note
+
+    note right of Refunded
+        Reserved funds returned
+        to the customer's wallet.
+    end note
