@@ -304,23 +304,19 @@ At least 70% line coverage on domain logic.
 **Decision:** the key is unique per customer and stored for at least 24 hours.
 **Reason:** covers slow networks and retries without storing keys forever.
 
-#### D-10 Which rounding mode for money?
-**Decision:** BigDecimal with 2 decimals, `HALF_UP`. Never double or float.
-**Reason:** the brief requires exact decimals but does not name the rounding mode.
-
-#### D-11 Is the NetCo batch biller required?
+#### D-10 Is the NetCo batch biller required?
 **Decision:** not in the first version. It is optional in the brief and is built only if time remains.
 **Reason:** FR-15 requires 3 billers: ElectroCo, AquaCo and TopUpNet.
 
-#### D-12 Which target for bill inquiry time (NFR-7)?
+#### D-11 Which target for bill inquiry time (NFR-7)?
 **Decision:** 95% of inquiries in under 5 seconds (changed from 3).
 **Reason:** AquaCo takes 2 to 4 seconds, so 3 seconds could fail on normal water-bill inquiries.
 
-#### D-13 Which notifications are sent?
+#### D-12 Which notifications are sent?
 **Decision:** SMS and push on completion and failure. Email is optional.
 **Reason:** FR-22 requires SMS and push.
 
-#### D-14 Should refunds of completed payments (FR-27) be in scope?
+#### D-13 Should refunds of completed payments (FR-27) be in scope?
 **Decision:** Could. Only if time remains, with support approval.
 **Reason:** the priority is Could in the brief.
 
@@ -330,9 +326,10 @@ At least 70% line coverage on domain logic.
   **AI answer:**   from the situations and hard cases from the brief.
   **What we did:** fixed, we wanted to gather all info and then write them in our style.
 
-- **Question:**    which hard cases need extra user stories?
-  **AI answer:**   gathered from all the functional requirements and did user stories for them. 
-  **What we did:** fixed, its 3-second inquiry target was wrong for AquaCo (2 to 4 s), so we changed it to 5s.
+- **Question:**    what is unclear or missing in the brief that we should decide ourselves?
+  **AI answer:**   listed 14 ambiguities, such as whether the fee is refunded on failure, 
+  whether a customer can cancel an Unknown payment, and how held payments count towards the daily limit.
+  **What we did:** fixed, we gave the AI the brief, so it covered the expected qualities. But the 3-second     inquiry target was the AI's own number, not the brief's, and it was wrong for AquaCo (2 to 4 s), so we changed it to 5 s. and removed the unneeded.
 
 - **Question:**    what non-functional requirements should we measure?
   **AI answer:**   from the hard cases, it suggested many solutions and test
