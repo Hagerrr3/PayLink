@@ -1,0 +1,136 @@
+
+@startuml
+left to right direction
+
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+'========================
+' Actors
+'========================
+
+actor Customer
+actor Agent
+actor Biller
+
+actor "Staff member" as Staff
+actor Admin
+actor Support
+
+' Actor generalization
+Admin --|> Staff
+Support --|> Staff
+
+'========================
+' PayLink System
+'========================
+
+rectangle "PayLink System" {
+
+    ' Authentication
+    usecase "Register" as UC1
+    usecase "Log in" as UC2
+    usecase "Log out" as UC3
+
+    ' Customer use cases
+    usecase "View wallet balance\nand transaction history" as UC4
+    usecase "Top up wallet" as UC5
+    usecase "View billers and\nrequired input fields" as UC6
+    usecase "Run bill inquiry" as UC7
+    usecase "Pay bill" as UC8
+    usecase "Request refund" as UC9
+    usecase "Receive payment\nstatus notifications" as UC10
+    usecase "Upgrade verification level" as UC11
+
+    ' Agent use cases
+    usecase "Pay bill on behalf\nof customer" as UC12
+
+    ' Payment-related use cases
+    usecase "Check payment limits\nand velocity" as UC13
+    usecase "Hold wallet funds" as UC14
+
+    ' Biller use cases
+    usecase "Process bill payment" as UC15
+    usecase "Send asynchronous\npayment callback" as UC16
+    usecase "Provide settlement file" as UC17
+
+    ' Admin use cases
+    usecase "Manage billers\nand services" as UC18
+    usecase "Edit fees and limits" as UC19
+    usecase "View daily totals" as UC20
+
+    ' Support use cases
+    usecase "Search payment and\nview full history" as UC21
+    usecase "Block / unblock account" as UC22
+    usecase "Approve refund" as UC23
+    usecase "Review reconciliation report" as UC24
+
+    ' Reconciliation
+    usecase "Generate daily\nreconciliation report" as UC25
+
+    ' Relationships between use cases
+    UC8 .> UC7 : <<include>>
+    UC8 .> UC13 : <<include>>
+    UC8 .> UC14 : <<include>>
+    UC8 .> UC15 : <<include>>
+
+    UC12 .> UC8 : <<include>>
+
+    UC23 .> UC9 : <<extend>>
+
+    UC25 .> UC17 : <<include>>
+}
+
+'========================
+' Customer associations
+'========================
+
+Customer -- UC1
+Customer -- UC2
+Customer -- UC3
+Customer -- UC4
+Customer -- UC5
+Customer -- UC6
+Customer -- UC7
+Customer -- UC8
+Customer -- UC9
+Customer -- UC10
+Customer -- UC11
+
+'========================
+' Agent associations
+'========================
+
+Agent -- UC2
+Agent -- UC3
+Agent -- UC5
+Agent -- UC12
+
+'========================
+' Biller associations
+'========================
+
+Biller -- UC7
+Biller -- UC15
+Biller -- UC16
+Biller -- UC17
+
+'========================
+' Staff associations
+'========================
+
+Staff -- UC2
+Staff -- UC3
+
+' Admin
+Admin -- UC18
+Admin -- UC19
+Admin -- UC20
+
+' Support
+Support -- UC21
+Support -- UC22
+Support -- UC23
+Support -- UC24
+
+@enduml
